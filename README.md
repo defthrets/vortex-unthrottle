@@ -27,18 +27,31 @@ maxParallelDownloads = isPremium ? settings.maxParallelDownloads : 1
 
 The fix: remove the worker cap, kill the premium gate, bump defaults.
 
+## Quick Install (Windows)
+
+1. Install [Node.js](https://nodejs.org) if you don't have it
+2. Download [`Vortex-Unthrottle.bat`](https://github.com/defthrets/vortex-unthrottle/raw/main/Vortex-Unthrottle.bat)
+3. Drop it on your desktop
+4. **Close Vortex**, then double-click the .bat
+5. Reopen Vortex
+
+The .bat always pulls the latest version from this repo before running. After Vortex updates, just click it again.
+
 ## Usage
 
 ### Windows
 
 ```powershell
-# Patch (default Vortex install)
+# One-click (downloads latest, patches, done)
+.\Vortex-Unthrottle.bat
+
+# Manual — patch (default Vortex install)
 .\unthrottle.ps1
 
-# Custom install path
+# Manual — custom install path
 .\unthrottle.ps1 -VortexPath "D:\Games\Vortex"
 
-# Restore original
+# Manual — restore original
 .\unthrottle.ps1 -Restore
 ```
 
