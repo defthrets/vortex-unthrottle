@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# unthrottle.sh — Patch Vortex to bypass Nexus Mods download speed caps
+# unthrottle.sh --- Patch Vortex to bypass Nexus Mods download speed caps
 # Linux / Steam Deck / Wine/Proton version
 #
 # Usage:
@@ -33,10 +33,10 @@ ASAR="$VORTEX_PATH/resources/app.asar"
 BAK="$VORTEX_PATH/resources/app.asar.bak"
 WORK="$(mktemp -d)"
 
-# ── Restore ───────────────────────────────────────────────────
+# ------ Restore ---------------------------------------------------------------------------------------------------------------------------------------------------------
 if $RESTORE; then
     if [ ! -f "$BAK" ]; then
-        echo -e "${RED}No backup at $BAK — nothing to restore.${NC}"
+        echo -e "${RED}No backup at $BAK --- nothing to restore.${NC}"
         exit 1
     fi
     echo -e "${CYAN}Restoring original...${NC}"
@@ -45,7 +45,7 @@ if $RESTORE; then
     exit 0
 fi
 
-# ── Pre-checks ────────────────────────────────────────────────
+# ------ Pre-checks ------------------------------------------------------------------------------------------------------------------------------------------------
 if [ ! -f "$ASAR" ]; then
     echo -e "${RED}app.asar not found at $ASAR${NC}"
     exit 1
@@ -62,18 +62,18 @@ if [ ! -f "$BAK" ]; then
     echo -e "${CYAN}Backed up original.${NC}"
 fi
 
-# ── Unpack ────────────────────────────────────────────────────
+# ------ Unpack ------------------------------------------------------------------------------------------------------------------------------------------------------------
 echo -e "${CYAN}Unpacking app.asar...${NC}"
 npx @electron/asar extract "$ASAR" "$WORK"
 cd "$WORK"
 
 if [ ! -f "renderer.js" ]; then
-    echo -e "${RED}Unpack failed — renderer.js not found.${NC}"
+    echo -e "${RED}Unpack failed --- renderer.js not found.${NC}"
     rm -rf "$WORK"
     exit 1
 fi
 
-# ── Patch ─────────────────────────────────────────────────────
+# ------ Patch ---------------------------------------------------------------------------------------------------------------------------------------------------------------
 echo -e "${CYAN}Patching download manager...${NC}"
 PATCHED=false
 
@@ -100,26 +100,26 @@ if grep -q "parallelDownloads:isPremium?state.settings.downloads.maxParallelDown
     PATCHED=true
 fi
 
-# Patch 4: Bump maxParallelDownloads default 1→3
+# Patch 4: Bump maxParallelDownloads default 1->3
 if grep -q "maxParallelDownloads:1," renderer.js; then
     sed -i 's/maxParallelDownloads:1,/maxParallelDownloads:3,/' renderer.js
-    echo -e "  ${GREEN}Patch 4: bumped maxParallelDownloads 1→3${NC}"
+    echo -e "  ${GREEN}Patch 4: bumped maxParallelDownloads 1->3${NC}"
     PATCHED=true
 fi
 
-# Patch 5: Bump maxChunks default 10→16
+# Patch 5: Bump maxChunks default 10->16
 if grep -q "maxChunks:10," renderer.js; then
     sed -i 's/maxChunks:10,/maxChunks:16,/' renderer.js
-    echo -e "  ${GREEN}Patch 5: bumped maxChunks 10→16${NC}"
+    echo -e "  ${GREEN}Patch 5: bumped maxChunks 10->16${NC}"
     PATCHED=true
 fi
 
 if ! $PATCHED; then
-    echo -e "${YELLOW}No patterns matched — Vortex may have updated.${NC}"
+    echo -e "${YELLOW}No patterns matched --- Vortex may have updated.${NC}"
     echo -e "${YELLOW}Check renderer.js for 'maxChunks', 'maxParallelDownloads', 'isPremium'.${NC}"
 fi
 
-# ── Repack ────────────────────────────────────────────────────
+# ------ Repack ------------------------------------------------------------------------------------------------------------------------------------------------------------
 echo -e "${CYAN}Repacking app.asar...${NC}"
 npx @electron/asar pack . "$ASAR"
 

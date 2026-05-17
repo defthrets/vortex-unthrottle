@@ -2,15 +2,15 @@
 
 **Patch Vortex Mod Manager to bypass Nexus Mods download speed caps.**
 
-Nexus Mods caps free accounts at ~1.5–3 MB/s per connection server-side. Vortex makes it worse — free users are locked to a single download worker, so files use ONE connection at that capped speed. You're downloading a 2 GB mod at 1.5 MB/s on a gigabit line.
+Nexus Mods caps free accounts at ~1.5---3 MB/s per connection server-side. Vortex makes it worse --- free users are locked to a single download worker, so files use ONE connection at that capped speed. You're downloading a 2 GB mod at 1.5 MB/s on a gigabit line.
 
 This tool patches Vortex's `app.asar` to:
 
-1. **Remove the worker cap on chunks** — all 16 connections fire at once
+1. **Remove the worker cap on chunks** --- all 16 connections fire at once
 2. **Remove the premium gate on parallel downloads**
-3. **Bump defaults** — 16 chunks per file, 3 files in parallel
+3. **Bump defaults** --- 16 chunks per file, 3 files in parallel
 
-Result: each file uses 16 simultaneous CDN connections at 1.5–3 MB/s each = **24–48 MB/s per file**.
+Result: each file uses 16 simultaneous CDN connections at 1.5---3 MB/s each = **24---48 MB/s per file**.
 
 ## How it works
 
@@ -18,7 +18,7 @@ Vortex has a download manager with chunked downloading. The bottleneck:
 
 ```js
 // Free accounts: maxWorkers = 1
-// So maxChunks = min(10, 1) = 1 — single connection!
+// So maxChunks = min(10, 1) = 1 --- single connection!
 maxChunks = Math.min(this.mMaxChunks, this.mMaxWorkers)
 
 // Premium gate on parallel downloads
@@ -45,13 +45,13 @@ The .bat always pulls the latest version from this repo before running. After Vo
 # One-click (downloads latest, patches, done)
 .\Vortex-Unthrottle.bat
 
-# Manual — patch (default Vortex install)
+# Manual --- patch (default Vortex install)
 .\unthrottle.ps1
 
-# Manual — custom install path
+# Manual --- custom install path
 .\unthrottle.ps1 -VortexPath "D:\Games\Vortex"
 
-# Manual — restore original
+# Manual --- restore original
 .\unthrottle.ps1 -Restore
 ```
 

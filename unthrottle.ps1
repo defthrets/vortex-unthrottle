@@ -8,7 +8,7 @@
     worker, which means files use ONE connection at that capped speed.
 
     This script patches Vortex's app.asar (Electron bundle) to:
-    1. Remove the worker cap on download chunks — all 16 connections fire at once
+    1. Remove the worker cap on download chunks   all 16 connections fire at once
     2. Remove the premium-only gate on parallel downloads
     3. Bump defaults: 16 chunks/file, 3 parallel downloads
 
@@ -45,10 +45,10 @@ $asarPath = Join-Path $VortexPath "resources\app.asar"
 $asarBak  = Join-Path $VortexPath "resources\app.asar.bak"
 $workDir  = Join-Path $env:TEMP "vortex-unthrottle"
 
-# ── Restore mode ──────────────────────────────────────────────
+# -- Restore mode ----------------------------------------------
 if ($Restore) {
     if (-not (Test-Path $asarBak)) {
-        Write-Host "No backup found at $asarBak — nothing to restore." -ForegroundColor Yellow
+        Write-Host "No backup found at $asarBak   nothing to restore." -ForegroundColor Yellow
         exit 1
     }
     Write-Host "Restoring original app.asar from backup..." -ForegroundColor Cyan
@@ -57,7 +57,7 @@ if ($Restore) {
     exit 0
 }
 
-# ── Pre-checks ────────────────────────────────────────────────
+# -- Pre-checks ------------------------------------------------
 if (-not (Test-Path $asarPath)) {
     Write-Host "app.asar not found at $asarPath. Is Vortex installed? Use -VortexPath to point to the right location." -ForegroundColor Red
     exit 1
@@ -76,7 +76,7 @@ if (-not $npx) {
     exit 1
 }
 
-# ── Unpack ────────────────────────────────────────────────────
+# -- Unpack ----------------------------------------------------
 Write-Host "Unpacking app.asar..." -ForegroundColor Cyan
 if (Test-Path $workDir) { Remove-Item -Recurse -Force $workDir }
 New-Item -ItemType Directory -Path $workDir | Out-Null
@@ -85,12 +85,12 @@ Push-Location $workDir
 try {
     npx @electron/asar extract $asarPath . 2>&1 | Out-Null
     if (-not (Test-Path "renderer.js")) {
-        Write-Host "Unpack failed — renderer.js not found." -ForegroundColor Red
+        Write-Host "Unpack failed   renderer.js not found." -ForegroundColor Red
         exit 1
     }
     Write-Host "Unpacked OK." -ForegroundColor Green
 
-    # ── Patch ──────────────────────────────────────────────────
+    # -- Patch --------------------------------------------------
     Write-Host "Patching download manager..." -ForegroundColor Cyan
 
     $renderer = Get-Content "renderer.js" -Raw
@@ -99,7 +99,7 @@ try {
     # Patch 1: Remove maxWorkers cap on chunks
     # Before: maxChunks=Math.min(this.mMaxChunks,this.mMaxWorkers)
     # After:  maxChunks=this.mMaxChunks
-    # This is the KEY fix — free accounts had maxWorkers=1, capping chunks to 1.
+    # This is the KEY fix   free accounts had maxWorkers=1, capping chunks to 1.
     $old = 'maxChunks=Math.min(this.mMaxChunks,this.mMaxWorkers)'
     $new = 'maxChunks=this.mMaxChunks'
     if ($renderer.Contains($old)) {
@@ -135,7 +135,7 @@ try {
     $new = 'maxParallelDownloads:3,'
     if ($renderer.Contains($old)) {
         $renderer = $renderer.Replace($old, $new)
-        Write-Host "  Patch 4: bumped maxParallelDownloads default 1→3" -ForegroundColor Green
+        Write-Host "  Patch 4: bumped maxParallelDownloads default 1->3" -ForegroundColor Green
         $patched = $true
     }
 
@@ -144,18 +144,18 @@ try {
     $new = 'maxChunks:16,'
     if ($renderer.Contains($old)) {
         $renderer = $renderer.Replace($old, $new)
-        Write-Host "  Patch 5: bumped maxChunks default 10→16" -ForegroundColor Green
+        Write-Host "  Patch 5: bumped maxChunks default 10->16" -ForegroundColor Green
         $patched = $true
     }
 
     if (-not $patched) {
-        Write-Host "No patterns matched — Vortex may have updated. Check renderer.js manually." -ForegroundColor Yellow
+        Write-Host "No patterns matched   Vortex may have updated. Check renderer.js manually." -ForegroundColor Yellow
     }
 
     # Write patched renderer back
     Set-Content -Path "renderer.js" -Value $renderer -NoNewline
 
-    # ── Repack ─────────────────────────────────────────────────
+    # -- Repack -------------------------------------------------
     Write-Host "Repacking app.asar..." -ForegroundColor Cyan
     npx @electron/asar pack . $asarPath 2>&1
 
