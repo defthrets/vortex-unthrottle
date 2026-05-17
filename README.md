@@ -1,31 +1,40 @@
 # vortex-unthrottle
 
-**Patch Vortex Mod Manager to bypass Nexus Mods download speed caps.**
+**Patch Vortex Mod Manager to bypass Nexus Mods download restrictions.**
 
-Nexus Mods caps free accounts at ~1.5---3 MB/s per connection server-side. Vortex makes it worse --- free users are locked to a single download worker, so files use ONE connection at that capped speed. You're downloading a 2 GB mod at 1.5 MB/s on a gigabit line.
+Nexus Mods caps free accounts at ~3 MB/s per connection on their CDN. Vortex makes it worse — free users are locked to a single download worker and gated out of parallel downloads. You're downloading a 2 GB mod at 3 MB/s on a gigabit line.
 
-This tool patches Vortex's `app.asar` to:
+This tool patches Vortex's `app.asar` to remove Vortex's *own* restrictions:
 
-1. **Remove the worker cap on chunks** --- all 16 connections fire at once
-2. **Remove the premium gate on parallel downloads**
-3. **Bump defaults** --- 16 chunks per file, 3 files in parallel
+1. **Remove the premium gate on parallel downloads** — queue up to 3 files at once
+2. **Remove the worker cap on chunks** — lets Vortex use all available chunks
+3. **Bump defaults** — 16 chunks, 3 parallel downloads
 
-Result: each file uses 16 simultaneous CDN connections at 1.5---3 MB/s each = **24---48 MB/s per file**.
+## What it can and can't do
+
+**What improves:**
+- Multiple files download simultaneously (3 at once) — 3 x 3 MB/s = **~9 MB/s across queued mods**
+- Large mod collections finish ~3x faster since files run in parallel
+
+**What it can't do:**
+- Single file speed is still capped at ~3 MB/s. Nexus CDN (Cloudflare) doesn't support HTTP Range requests for free accounts, so a single file can't be split across multiple connections. Only Nexus Premium lifts this cap.
+
+**Optional proxy:** `Vortex-Unthrottle.bat` also starts a local proxy (`nexus-fast-proxy.js`) that attempts parallel Range requests on Nexus CDN. If Cloudflare honors them (rare), single files get 12x speed. If not (usual), it passes through with zero impact. The proxy only touches Nexus CDN traffic — everything else goes straight through.
 
 ## How it works
 
-Vortex has a download manager with chunked downloading. The bottleneck:
+Vortex has a download manager with chunked downloading. The bottlenecks:
 
 ```js
 // Free accounts: maxWorkers = 1
-// So maxChunks = min(10, 1) = 1 --- single connection!
+// So maxChunks = min(10, 1) = 1
 maxChunks = Math.min(this.mMaxChunks, this.mMaxWorkers)
 
 // Premium gate on parallel downloads
 maxParallelDownloads = isPremium ? settings.maxParallelDownloads : 1
 ```
 
-The fix: remove the worker cap, kill the premium gate, bump defaults.
+The fix: remove both gates, bump defaults. Multi-file queues fly. Single files are still bound by the CDN.
 
 ## Quick Install (Windows)
 
