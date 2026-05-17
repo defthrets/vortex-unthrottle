@@ -1,15 +1,19 @@
 <#
 .SYNOPSIS
-    Patches Vortex Mod Manager to bypass Nexus Mods download speed throttle.
+    Patches Vortex Mod Manager to bypass Nexus Mods download speed caps.
 
 .DESCRIPTION
-    Unpacks Vortex's app.asar (Electron bundle), patches the client-side throttle
-    in the download engine, and repacks. Downloads will run at full line speed
-    regardless of Nexus Mods account tier.
+    Nexus Mods caps free accounts at ~1.5-3 MB/s per connection server-side.
+    Vortex enforces this further by limiting free users to a single download
+    worker, which means files use ONE connection at that capped speed.
 
-    The throttle lives in the renderer process — it reads a bytes-per-second cap
-    from the Nexus API response and enforces a slow drip. This patch forces the
-    cap to always be zero (unlimited), so every chunk passes instantly.
+    This script patches Vortex's app.asar (Electron bundle) to:
+    1. Remove the worker cap on download chunks — all 16 connections fire at once
+    2. Remove the premium-only gate on parallel downloads
+    3. Bump defaults: 16 chunks/file, 3 parallel downloads
+
+    Result: each file uses 16 simultaneous CDN connections at 1.5-3 MB/s each
+    = 24-48 MB/s per file, up to 3 files in parallel.
 
 .PARAMETER VortexPath
     Path to Vortex installation root.
@@ -24,7 +28,7 @@
 
 .EXAMPLE
     .\unthrottle.ps1 -Restore
-    Restores the backup, undoing the patch.
+    Restores the backup, undoing all patches.
 
 .EXAMPLE
     .\unthrottle.ps1 -VortexPath "D:\Games\Vortex"
@@ -87,49 +91,65 @@ try {
     Write-Host "Unpacked OK." -ForegroundColor Green
 
     # ── Patch ──────────────────────────────────────────────────
-    Write-Host "Patching throttle..." -ForegroundColor Cyan
+    Write-Host "Patching download manager..." -ForegroundColor Cyan
 
     $renderer = Get-Content "renderer.js" -Raw
-
-    # The throttle code: const bps=getBPS();if(0===bps)return callback(null,chunk)
-    # We force bps to always be 0, so every chunk sails through.
-    #
-    # Pattern to match (minified, with surrounding context for uniqueness):
-    # throttle((e=>{const n=t.getBPS() ...
-    #
-    # Strategy: replace `getBPS()` call result with literal 0.
-    # Looking for: getBPS()  or  t.getBPS()
-
-    $patterns = @(
-        # Pattern 1: direct call — const bps=getBPS()
-        @{
-            Find = 'const bps=getBPS()'
-            Replace = 'const bps=0      '
-        }
-        # Pattern 2: method call — const bps=t.getBPS()
-        @{
-            Find = 'return t.getBPS()'
-            Replace = 'return 0          '
-        }
-        # Pattern 3: inline in ternary — n=t.getBPS()
-        @{
-            Find = '=t.getBPS()'
-            Replace = '=0          '
-        }
-    )
-
     $patched = $false
-    foreach ($p in $patterns) {
-        if ($renderer.Contains($p.Find)) {
-            $renderer = $renderer.Replace($p.Find, $p.Replace)
-            $patched = $true
-            Write-Host "  Patched: $($p.Find)" -ForegroundColor Green
-        }
+
+    # Patch 1: Remove maxWorkers cap on chunks
+    # Before: maxChunks=Math.min(this.mMaxChunks,this.mMaxWorkers)
+    # After:  maxChunks=this.mMaxChunks
+    # This is the KEY fix — free accounts had maxWorkers=1, capping chunks to 1.
+    $old = 'maxChunks=Math.min(this.mMaxChunks,this.mMaxWorkers)'
+    $new = 'maxChunks=this.mMaxChunks'
+    if ($renderer.Contains($old)) {
+        $renderer = $renderer.Replace($old, $new)
+        Write-Host "  Patch 1: removed worker cap on chunks" -ForegroundColor Green
+        $patched = $true
+    }
+
+    # Patch 2: Remove premium gate on maxParallelDownloads (line ~2117)
+    # Before: maxParallelDownloads=!0===state.persistent.nexus?.userInfo?.isPremium?state.settings.downloads.maxParallelDownloads:1
+    # After:  maxParallelDownloads=state.settings.downloads.maxParallelDownloads
+    $old = 'maxParallelDownloads=!0===state.persistent.nexus?.userInfo?.isPremium?state.settings.downloads.maxParallelDownloads:1'
+    $new = 'maxParallelDownloads=state.settings.downloads.maxParallelDownloads'
+    if ($renderer.Contains($old)) {
+        $renderer = $renderer.Replace($old, $new)
+        Write-Host "  Patch 2: removed premium gate on parallel downloads (worker)" -ForegroundColor Green
+        $patched = $true
+    }
+
+    # Patch 3: Remove premium gate on parallelDownloads (line ~2482)
+    # Before: parallelDownloads:isPremium?state.settings.downloads.maxParallelDownloads:1
+    # After:  parallelDownloads:state.settings.downloads.maxParallelDownloads
+    $old = 'parallelDownloads:isPremium?state.settings.downloads.maxParallelDownloads:1'
+    $new = 'parallelDownloads:state.settings.downloads.maxParallelDownloads'
+    if ($renderer.Contains($old)) {
+        $renderer = $renderer.Replace($old, $new)
+        Write-Host "  Patch 3: removed premium gate on parallel downloads (UI)" -ForegroundColor Green
+        $patched = $true
+    }
+
+    # Patch 4: Bump default maxParallelDownloads from 1 to 3
+    $old = 'maxParallelDownloads:1,'
+    $new = 'maxParallelDownloads:3,'
+    if ($renderer.Contains($old)) {
+        $renderer = $renderer.Replace($old, $new)
+        Write-Host "  Patch 4: bumped maxParallelDownloads default 1→3" -ForegroundColor Green
+        $patched = $true
+    }
+
+    # Patch 5: Bump default maxChunks from 10 to 16
+    $old = 'maxChunks:10,'
+    $new = 'maxChunks:16,'
+    if ($renderer.Contains($old)) {
+        $renderer = $renderer.Replace($old, $new)
+        Write-Host "  Patch 5: bumped maxChunks default 10→16" -ForegroundColor Green
+        $patched = $true
     }
 
     if (-not $patched) {
-        Write-Host "Throttle patterns not found — maybe Vortex updated? Check renderer.js manually for 'getBPS' or 'throttle'." -ForegroundColor Yellow
-        # Still try to repack — might already be patched or different version
+        Write-Host "No patterns matched — Vortex may have updated. Check renderer.js manually." -ForegroundColor Yellow
     }
 
     # Write patched renderer back
@@ -139,9 +159,8 @@ try {
     Write-Host "Repacking app.asar..." -ForegroundColor Cyan
     npx @electron/asar pack . $asarPath 2>&1
 
-    Write-Host "Done." -ForegroundColor Green
     Write-Host ""
-    Write-Host "Close and reopen Vortex for the patch to take effect." -ForegroundColor Yellow
+    Write-Host "Done. Close and reopen Vortex." -ForegroundColor Green
     Write-Host "To undo:  .\unthrottle.ps1 -Restore" -ForegroundColor Yellow
 }
 finally {

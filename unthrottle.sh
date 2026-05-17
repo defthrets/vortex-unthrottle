@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# unthrottle.sh — Patch Vortex Mod Manager to bypass Nexus Mods download throttle
+# unthrottle.sh — Patch Vortex to bypass Nexus Mods download speed caps
 # Linux / Steam Deck / Wine/Proton version
 #
 # Usage:
 #   ./unthrottle.sh                          # Patch default Vortex install
 #   ./unthrottle.sh "/path/to/Vortex"        # Custom path
-#   ./unthrottle.sh --restore                # Undo the patch
+#   ./unthrottle.sh --restore                # Undo all patches
 
 set -euo pipefail
 
@@ -16,9 +16,8 @@ RESTORE=false
 
 if [[ "$VORTEX_PATH" == "--restore" ]]; then
     RESTORE=true
-    # Find Vortex from common paths
     for guess in \
-        "$HOME/.local/share/Steam/steamapps/compatdata/*/pfx/drive_c/Program Files/Black Tree Gaming Ltd/Vortex" \
+        "$HOME/.local/share/Steam/steamapps/compatdata/"*"/pfx/drive_c/Program Files/Black Tree Gaming Ltd/Vortex" \
         "$HOME/.wine/drive_c/Program Files/Black Tree Gaming Ltd/Vortex" \
         "/mnt/c/Program Files/Black Tree Gaming Ltd/Vortex"; do
         if [ -d "$guess" ]; then VORTEX_PATH="$guess"; break; fi
@@ -75,24 +74,49 @@ if [ ! -f "renderer.js" ]; then
 fi
 
 # ── Patch ─────────────────────────────────────────────────────
-echo -e "${CYAN}Patching throttle...${NC}"
+echo -e "${CYAN}Patching download manager...${NC}"
 PATCHED=false
 
-for pattern in \
-    's/const bps=getBPS()/const bps=0       /' \
-    's/return t\.getBPS()/return 0          /' \
-    's/=t\.getBPS()/=0          /'; do
+# Patch 1: Remove maxWorkers cap on chunks (THE key fix)
+# Before: maxChunks=Math.min(this.mMaxChunks,this.mMaxWorkers)
+# After:  maxChunks=this.mMaxChunks
+if grep -q "maxChunks=Math.min(this.mMaxChunks,this.mMaxWorkers)" renderer.js; then
+    sed -i 's/maxChunks=Math\.min(this\.mMaxChunks,this\.mMaxWorkers)/maxChunks=this.mMaxChunks/' renderer.js
+    echo -e "  ${GREEN}Patch 1: removed worker cap on chunks${NC}"
+    PATCHED=true
+fi
 
-    if grep -q "$(echo "$pattern" | sed 's|s/||; s|/.*||')" renderer.js; then
-        sed -i "$pattern" renderer.js
-        echo -e "  ${GREEN}Patched: $pattern${NC}"
-        PATCHED=true
-    fi
-done
+# Patch 2: Remove premium gate on maxParallelDownloads
+if grep -q "maxParallelDownloads=!0===state.persistent.nexus?.userInfo?.isPremium?state.settings.downloads.maxParallelDownloads:1" renderer.js; then
+    sed -i 's/maxParallelDownloads=!0===state\.persistent\.nexus?\.userInfo?\.isPremium?state\.settings\.downloads\.maxParallelDownloads:1/maxParallelDownloads=state.settings.downloads.maxParallelDownloads/' renderer.js
+    echo -e "  ${GREEN}Patch 2: removed premium gate on parallel downloads${NC}"
+    PATCHED=true
+fi
+
+# Patch 3: Remove premium gate on parallelDownloads (UI)
+if grep -q "parallelDownloads:isPremium?state.settings.downloads.maxParallelDownloads:1" renderer.js; then
+    sed -i 's/parallelDownloads:isPremium?state\.settings\.downloads\.maxParallelDownloads:1/parallelDownloads:state.settings.downloads.maxParallelDownloads/' renderer.js
+    echo -e "  ${GREEN}Patch 3: removed premium gate on parallel downloads (UI)${NC}"
+    PATCHED=true
+fi
+
+# Patch 4: Bump maxParallelDownloads default 1→3
+if grep -q "maxParallelDownloads:1," renderer.js; then
+    sed -i 's/maxParallelDownloads:1,/maxParallelDownloads:3,/' renderer.js
+    echo -e "  ${GREEN}Patch 4: bumped maxParallelDownloads 1→3${NC}"
+    PATCHED=true
+fi
+
+# Patch 5: Bump maxChunks default 10→16
+if grep -q "maxChunks:10," renderer.js; then
+    sed -i 's/maxChunks:10,/maxChunks:16,/' renderer.js
+    echo -e "  ${GREEN}Patch 5: bumped maxChunks 10→16${NC}"
+    PATCHED=true
+fi
 
 if ! $PATCHED; then
-    echo -e "${YELLOW}No throttle patterns matched — Vortex may have changed.${NC}"
-    echo -e "${YELLOW}Check renderer.js for 'getBPS' or 'throttle'.${NC}"
+    echo -e "${YELLOW}No patterns matched — Vortex may have updated.${NC}"
+    echo -e "${YELLOW}Check renderer.js for 'maxChunks', 'maxParallelDownloads', 'isPremium'.${NC}"
 fi
 
 # ── Repack ────────────────────────────────────────────────────

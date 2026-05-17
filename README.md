@@ -1,27 +1,31 @@
 # vortex-unthrottle
 
-**Patch Vortex Mod Manager to bypass Nexus Mods download speed throttle.**
+**Patch Vortex Mod Manager to bypass Nexus Mods download speed caps.**
 
-Nexus Mods caps download speeds for free accounts. Vortex enforces this with a client-side throttle — a byte-per-second limiter that drips chunks at whatever rate the Nexus API says you're allowed.
+Nexus Mods caps free accounts at ~1.5–3 MB/s per connection server-side. Vortex makes it worse — free users are locked to a single download worker, so files use ONE connection at that capped speed. You're downloading a 2 GB mod at 1.5 MB/s on a gigabit line.
 
-This tool patches Vortex's `app.asar` (its Electron bundle) to force the throttle cap to zero. Result: every download runs at your actual line speed. No proxy, no workarounds, no manual file links.
+This tool patches Vortex's `app.asar` to:
+
+1. **Remove the worker cap on chunks** — all 16 connections fire at once
+2. **Remove the premium gate on parallel downloads**
+3. **Bump defaults** — 16 chunks per file, 3 files in parallel
+
+Result: each file uses 16 simultaneous CDN connections at 1.5–3 MB/s each = **24–48 MB/s per file**.
 
 ## How it works
 
-Vortex bundles a `throttle.ts` → compiled into `renderer.js` inside `app.asar`. The relevant logic:
+Vortex has a download manager with chunked downloading. The bottleneck:
 
 ```js
-const bps = getBPS();           // Nexus says: 1.5 MB/s for you, peasant
-if (bps === 0) return next();   // if no cap, just go
-// ...otherwise drip chunks at bps rate
+// Free accounts: maxWorkers = 1
+// So maxChunks = min(10, 1) = 1 — single connection!
+maxChunks = Math.min(this.mMaxChunks, this.mMaxWorkers)
+
+// Premium gate on parallel downloads
+maxParallelDownloads = isPremium ? settings.maxParallelDownloads : 1
 ```
 
-Patch changes it to:
-
-```js
-const bps = 0;                  // unlimited
-if (bps === 0) return next();   // always true now — full speed
-```
+The fix: remove the worker cap, kill the premium gate, bump defaults.
 
 ## Usage
 
@@ -52,27 +56,13 @@ chmod +x unthrottle.sh
 ./unthrottle.sh --restore
 ```
 
-### Manual (if scripts don't work)
+## Vortex updates
 
-```powershell
-# Backup
-copy "resources\app.asar" "resources\app.asar.bak"
-
-# Unpack
-npx @electron/asar extract app.asar _unpacked
-
-# Edit _unpacked\renderer.js — find and replace any getBPS() call with 0
-# Then repack
-npx @electron/asar pack _unpacked app.asar
-```
-
-## What about Vortex updates?
-
-Vortex updates will overwrite `app.asar`. After an update, re-run the script. The backup persists so you can always restore.
+Vortex updates overwrite `app.asar`. After an update, re-run the script. The backup persists.
 
 ## Disclaimer
 
-This modifies Vortex's internal code. Not endorsed by Black Tree Gaming or Nexus Mods. Use at your own risk. If Vortex breaks after an update, restore the backup and wait for a patch update.
+This modifies Vortex's internal code. Not endorsed by Black Tree Gaming or Nexus Mods. Use at your own risk.
 
 ---
 
